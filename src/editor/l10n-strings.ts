@@ -1,3 +1,23 @@
+// The core languages supported by the mathfield UI.
+//
+// This small sets of languages have been selected to be included in the
+// main bundle because they are known to have a large number of users.
+//
+// Additional languages are available in `more-l10n-strings.ts` and can be
+// loaded on demand using:
+//
+// ```ts
+// Mathfield.strings = {no: {keyboard.tooltip.symbols': 'Symboler'...}}`
+// ```
+//
+// If you'd like to contribute a new language, please submit a PR to the
+// MathLive repository. Please indicate your level of proficiency in the
+// language you are contributing.
+// If you'd like to make a case for a particular language to be included in the
+// main bundle, please open an issue on the MathLive repository and explain
+// why it should be included.
+//
+
 export const STRINGS = {
   'en': {
     'keyboard.tooltip.symbols': 'Symbols',
@@ -785,25 +805,55 @@ export const STRINGS = {
     'keyboard.tooltip.numeric': 'Numeryczne',
     'keyboard.tooltip.alphabetic': 'Litery rzymskie',
     'tooltip.copy to clipboard': 'Kopiuj do Schowka',
+    'tooltip.cut to clipboard': 'Wytnij ze Schowka',
+    'tooltip.paste from clipboard': 'Wklej ze Schowka',
     'tooltip.redo': 'Przywróć',
-    'tooltip.toggle virtual keyboard': 'Przełącz wirtualną klawiaturę',
+    'tooltip.toggle virtual keyboard': 'Przełącz klawiaturę wirtualną',
+    'tooltip.menu': 'Menu',
     'tooltip.undo': 'Cofnij',
-    'menu.insert matrix': 'Wstaw macierz',
     'menu.borders': 'Ograniczniki macierzy',
-    'menu.array.add row above': 'Dodaj wiersz po',
-    'menu.array.add row below': 'Dodaj wiersz przed',
+    'menu.insert matrix': 'Wstaw macierz',
+    'menu.array.add row above': 'Dodaj wiersz przed',
+    'menu.array.add row below': 'Dodaj wiersz po',
     'menu.array.add column after': 'Dodaj kolumnę po',
     'menu.array.add column before': 'Dodaj kolumnę przed',
     'menu.array.delete row': 'Usuń wiersz',
     'menu.array.delete rows': 'Usuń wybrane wiersze',
     'menu.array.delete column': 'Usuń kolumnę',
     'menu.array.delete columns': 'Usuń wybrane kolumny',
-
     'menu.mode': 'Tryb',
     'menu.mode-math': 'Formuła',
     'menu.mode-text': 'Tekst',
     'menu.mode-latex': 'LaTeX',
-
+    'menu.insert': 'Wstaw',
+    'menu.insert.abs': 'Wartość bezwzględna',
+    'menu.insert.abs-template': '\\left|x\\right|',
+    'menu.insert.nth-root': 'Pierwiastek n-tego stopnia',
+    'menu.insert.nth-root-template': '\\sqrt[n]{x}',
+    'menu.insert.log-base': 'Logarytm o podstawie a',
+    'menu.insert.log-base-template': '\\log_a(x)',
+    'menu.insert.heading-calculus': 'Rachunek różniczkowy i całkowy',
+    'menu.insert.derivative': 'Pochodna',
+    'menu.insert.derivative-template': '\\dfrac{\\mathrm{d}}{\\mathrm{d}x}f(x)\\bigm|_{x=a}',
+    'menu.insert.nth-derivative': 'Pochodna n-tego rzędu',
+    'menu.insert.nth-derivative-template': '\\dfrac{\\mathrm{d}^n}{\\mathrm{d}x^n}f(x)\\bigm|_{x=a}',
+    'menu.insert.integral': 'Całka',
+    'menu.insert.integral-template': '$\\int_a^b f(x)\\,\\mathrm{d}x$',
+    'menu.insert.sum': 'Suma',
+    'menu.insert.sum-template': '$\\sum_{i=1}^n x_i$',
+    'menu.insert.product': 'Iloczyn',
+    'menu.insert.product-template': '\\prod_{i=1}^n x_i',
+    'menu.insert.heading-complex-numbers': 'Liczby zespolone',
+    'menu.insert.modulus': 'Moduł',
+    'menu.insert.modulus-template': '\\lvert z \\rvert',
+    'menu.insert.argument': 'Argument',
+    'menu.insert.argument-template': '\\arg(z)',
+    'menu.insert.real-part': 'Część rzeczywista',
+    'menu.insert.real-part-template': '\\Re(z)',
+    'menu.insert.imaginary-part': 'Część urojona',
+    'menu.insert.imaginary-part-template': '\\Im(z)',
+    'menu.insert.conjugate': 'Sprzężenie',
+    'menu.insert.conjugate-template': '\\overline{z}',
     'tooltip.blackboard': 'Tablica',
     'tooltip.bold': 'Pogrubienie',
     'tooltip.italic': 'Kursywa',
@@ -812,9 +862,7 @@ export const STRINGS = {
     'tooltip.caligraphic': 'Kaligraficzny',
     'tooltip.typewriter': 'Maszynowy',
     'tooltip.roman-upright': 'Rzymski prosto',
-
     'tooltip.row-by-col': '%@ × %@',
-
     'menu.font-style': 'Styl czcionki',
     'menu.accent': 'Akcent',
     'menu.decoration': 'Dekoracja',
@@ -824,7 +872,6 @@ export const STRINGS = {
     'menu.simplify': 'Uprość',
     'menu.solve': 'Rozwiąż',
     'menu.solve-for': 'Rozwiąż dla %@',
-
     'menu.cut': 'Wytnij',
     'menu.copy': 'Kopiuj',
     'menu.copy-as-latex': 'Kopiuj jako LaTeX',
@@ -933,13 +980,16 @@ export const STRINGS = {
     'keyboard.tooltip.numeric': 'Числовий',
     'keyboard.tooltip.alphabetic': 'Римські літери',
     'tooltip.copy to clipboard': 'Копіювати в буфер обміну',
+    'tooltip.cut to clipboard': 'Вирізати в буфер обміну',
+    'tooltip.paste from clipboard': 'Вставити з буфера обміну',
     'tooltip.redo': 'Повторити',
     'tooltip.toggle virtual keyboard': 'Переключити віртуальну клавіатуру',
+    'tooltip.menu': 'Меню',
     'tooltip.undo': 'Скасувати',
+    'menu.borders': 'Межі',
     'menu.insert matrix': 'Вставити матрицю',
-    'menu.borders': 'Матричні роздільники',
-    'menu.array.add row above': 'Додати рядок після',
-    'menu.array.add row below': 'Додати рядок до',
+    'menu.array.add row above': 'Додати рядок перед',
+    'menu.array.add row below': 'Додати рядок після',
     'menu.array.add column after': 'Додати стовпець після',
     'menu.array.add column before': 'Додати стовпець перед',
     'menu.array.delete row': 'Видалити рядок',
@@ -952,26 +1002,56 @@ export const STRINGS = {
     'menu.mode-text': 'Текст',
     'menu.mode-latex': 'LaTeX',
 
-    'tooltip.blackboard': 'Чорна дошка',
+    'menu.insert': 'Вставити',
+    'menu.insert.abs': 'Абсолютне значення',
+    'menu.insert.abs-template': '\\left|x\\right|',
+    'menu.insert.nth-root': 'Корінь n-го степеня',
+    'menu.insert.nth-root-template': '\\sqrt[n]{x}',
+    'menu.insert.log-base': 'Логарифм за основою a',
+    'menu.insert.log-base-template': '\\log_a(x)',
+    'menu.insert.heading-calculus': 'Обчислення',
+    'menu.insert.derivative': 'Похідна',
+    'menu.insert.derivative-template': '\\dfrac{\\mathrm{d}}{\\mathrm{d}x}f(x)\\bigm|_{x=a}',
+    'menu.insert.nth-derivative': 'Похідна n-го порядку',
+    'menu.insert.nth-derivative-template': '\\dfrac{\\mathrm{d}^n}{\\mathrm{d}x^n}f(x)\\bigm|_{x=a}',
+    'menu.insert.integral': 'Інтеграл',
+    'menu.insert.integral-template': '$\\int_a^b f(x)\\,\\mathrm{d}x$',
+    'menu.insert.sum': 'Сума',
+    'menu.insert.sum-template': '$\\sum_{i=1}^n x_i$',
+    'menu.insert.product': 'Добуток',
+    'menu.insert.product-template': '\\prod_{i=1}^n x_i',
+    'menu.insert.heading-complex-numbers': 'Комплексні числа',
+    'menu.insert.modulus': 'Модуль',
+    'menu.insert.modulus-template': '\\lvert z \\rvert',
+    'menu.insert.argument': 'Аргумент',
+    'menu.insert.argument-template': '\\arg(z)',
+    'menu.insert.real-part': 'Дійсна частина',
+    'menu.insert.real-part-template': '\\Re(z)',
+    'menu.insert.imaginary-part': 'Уявна частина',
+    'menu.insert.imaginary-part-template': '\\Im(z)',
+    'menu.insert.conjugate': 'Спряжене число',
+    'menu.insert.conjugate-template': '\\overline{z}',
+
+    'tooltip.blackboard': 'Дошка',
     'tooltip.bold': 'Жирний',
     'tooltip.italic': 'Курсив',
     'tooltip.fraktur': 'Фрактурний',
-    'tooltip.script': 'Скрипт',
+    'tooltip.script': 'Рукописний',
     'tooltip.caligraphic': 'Каліграфічний',
-    'tooltip.typewriter': 'Машинка для письма',
-    'tooltip.roman-upright': 'Римський прямий',
+    'tooltip.typewriter': 'Друкарський',
+    'tooltip.roman-upright': 'Прямий римський',
 
     'tooltip.row-by-col': '%@ × %@',
 
     'menu.font-style': 'Стиль шрифту',
     'menu.accent': 'Акцент',
-    'menu.decoration': 'Декорація',
+    'menu.decoration': 'Оформлення',
     'menu.color': 'Колір',
     'menu.background-color': 'Фон',
     'menu.evaluate': 'Обчислити',
     'menu.simplify': 'Спростити',
-    'menu.solve': 'Вирішити',
-    'menu.solve-for': 'Вирішити для %@',
+    'menu.solve': 'Розв’язати',
+    'menu.solve-for': 'Розв’язати для %@',
 
     'menu.cut': 'Вирізати',
     'menu.copy': 'Копіювати',
@@ -985,7 +1065,7 @@ export const STRINGS = {
     'color.red': 'Червоний',
     'color.orange': 'Помаранчевий',
     'color.yellow': 'Жовтий',
-    'color.lime': 'Лайм',
+    'color.lime': 'Лаймовий',
     'color.green': 'Зелений',
     'color.teal': 'Бірюзовий',
     'color.cyan': 'Синьо-зелений',

@@ -1,21 +1,20 @@
 import type { Selector } from './commands';
 import type {
+  Expression,
   LatexSyntaxError,
   LatexValue,
   MacroDictionary,
+  Offset,
   ParseMode,
   Registers,
   Style,
-} from './core-types';
-import type {
-  InsertOptions,
-  OutputFormat,
-  Offset,
-  Range,
   Selection,
-  Mathfield,
+  Range,
+  OutputFormat,
   ElementInfo,
-} from './mathfield';
+  InsertOptions,
+} from './core-types';
+import type { InsertStyleHook, Mathfield } from './mathfield';
 import type {
   InlineShortcutDefinitions,
   Keybinding,
@@ -37,7 +36,10 @@ import {
   isTouchCapable,
 } from '../ui/utils/capabilities';
 import { resolveUrl } from '../common/script-url';
-import { reparse, requestUpdate } from '../editor-mathfield/render';
+import {
+  reparseAllMathfields,
+  requestUpdate,
+} from '../editor-mathfield/render';
 import { reloadFonts, loadFonts } from '../core/fonts';
 import { defaultSpeakHook } from '../editor/speech';
 import { defaultReadAloudHook } from '../editor/speech-read-aloud';
@@ -48,14 +50,8 @@ import { getStylesheet, getStylesheetContent } from '../common/stylesheet';
 import { Scrim } from '../ui/utils/scrim';
 import { isOffset, isRange, isSelection } from 'editor-model/selection-utils';
 import { KeyboardModifiers } from './ui-events-types';
-import { defaultInsertStyleHook } from 'editor-mathfield/styling';
-
-/** @category MathJSON */
-export declare type Expression =
-  | number
-  | string
-  | { [key: string]: any }
-  | [Expression, ...Expression[]];
+import { defaultInsertStyleHook } from '../editor-mathfield/styling';
+import { _MathEnvironment } from '../core/math-environment';
 
 if (!isBrowser()) {
   console.error(
@@ -68,32 +64,33 @@ if (!isBrowser()) {
 //
 
 /**
-  *  ## Event re-targeting
-  *  Some events bubble up through the DOM tree, so that they are detectable by
-  *   any element on the page.
-  *
-  * Bubbling events fired from within shadow DOM are re-targeted so that, to any
-  *  listener external to your component, they appear to come from your
-  *  component itself.
-
-  *  ## Custom Event Bubbling
-
-  *  By default, a bubbling custom event fired inside shadow DOM will stop
-  *  bubbling when it reaches the shadow root.
-
-  *  To make a custom event pass through shadow DOM boundaries, you must set
-  *  both the `composed` and `bubbles` flags to true.
-
-  * The `move-out` event signals that the user pressed an **arrow** key or
-  * **tab** key but there was no navigation possible inside the mathfield.
-  *
-  * This event provides an opportunity to handle this situation, for example
-  * by focusing an element adjacent to the mathfield.
-  *
-  * If the event is canceled (i.e. `evt.preventDefault()` is called inside your
-  * event handler), the default behavior is to play a "plonk" sound.
-  *
-  * @category Web Component
+ *  **Event re-targeting**
+ *
+ *  Some events bubble up through the DOM tree, so that they are detectable by
+ *   any element on the page.
+ *
+ * Bubbling events fired from within shadow DOM are re-targeted so that, to any
+ *  listener external to your component, they appear to come from your
+ *  component itself.
+ *
+ *  **Custom Event Bubbling**
+ *
+ *  By default, a bubbling custom event fired inside shadow DOM will stop
+ *  bubbling when it reaches the shadow root.
+ *
+ *  To make a custom event pass through shadow DOM boundaries, you must set
+ *  both the `composed` and `bubbles` flags to true.
+ *
+ * The `move-out` event signals that the user pressed an **arrow** key or
+ * **tab** key but there was no navigation possible inside the mathfield.
+ *
+ * This event provides an opportunity to handle this situation, for example
+ * by focusing an element adjacent to the mathfield.
+ *
+ * If the event is canceled (i.e. `evt.preventDefault()` is called inside your
+ * event handler), the default behavior is to play a "plonk" sound.
+ *
+ * @category Mathfield
  */
 export type MoveOutEvent = {
   direction: 'forward' | 'backward' | 'upward' | 'downward';
@@ -150,10 +147,9 @@ const gDeferredState = new WeakMap<
 >();
 
 /**
- * These attributes of the `<math-field>` element correspond to the
- * [MathfieldOptions] properties.
+ * These attributes of the `<math-field>` element correspond to matching properties.
  *
- * @category Web Component
+ * @category Mathfield
  */
 export interface MathfieldElementAttributes {
   // Allow for global aria attributes, data- attributes, micro-data attributes
@@ -206,14 +202,14 @@ export interface MathfieldElementAttributes {
    * **Examples**
    *
    * -   slope = rise/run
-   * -   If x > 0, then f(x) = sin(x)
+   * -   If x &gt; 0, then f(x) = sin(x)
    * -   x^2 + sin (x) when x > 0
-   * -   When x&lt;0, x^{2n+1}&lt;0
+   * -   When x&lt;0, x^&#007b;2n+1&#007d;&lt;0
    * -   Graph x^2 -x+3 =0 for 0&lt;=x&lt;=5
    * -   Divide by x-3 and then add x^2-1 to both sides
    * -   Given g(x) = 4x – 3, when does g(x)=0?
-   * -   Let D be the set {(x,y)|0&lt;=x&lt;=1 and 0&lt;=y&lt;=x}
-   * -   \int\_{the unit square} f(x,y) dx dy
+   * -   Let D be the set &#007b;(x,y)|0&lt;=x&lt;=1 and 0&lt;=y&lt;=x&#007d;
+   * -   \int\_&#007b;the unit square&#007d; f(x,y) dx dy
    * -   For all n in NN
    *
    */
@@ -339,35 +335,22 @@ const DEPRECATED_OPTIONS = {
   fractionNavigationOrder: 'MathfieldElement.fractionNavigationOrder = ...',
 };
 
-export type InsertStyleHook = (
-  sender: Mathfield,
-  at: Offset,
-  info: { before: Offset; after: Offset }
-) => Readonly<Style>;
-
 /**
- * The `MathfieldElement` class represent a DOM element that displays
- * math equations.
+ *
+ * The `MathfieldElement` class is a DOM element that provides a math input
+ * field.
  *
  * It is a subclass of the standard
  * [`HTMLElement`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement)
- * class and as such inherits all of its properties and methods.
+ * class and as such inherits all of its properties and methods, such
+ * as `style`, `tabIndex`, `addEventListener()`, `getAttribute()`, etc...
  *
- * It inherits many useful properties and methods from `HTMLElement` such
- * as `style`, `tabIndex`, `addEventListener()`, `getAttribute()`,  etc...
- *
- * It is typically used to render a single equation.
- *
- * To render multiple equations, use multiple instances of `MathfieldElement`.
- *
- * The `MathfieldElement` class provides special properties and methods to
+ * The `MathfieldElement` class provides additional properties and methods to
  * control the display and behavior of `<math-field>` elements.
  *
- *
- * You will usually instantiate a `MathfieldElement` using the
- * `<math-field>` tag in HTML. However, if necessary you can also create
- * it programmatically using `new MathfieldElement()`.
- *
+ * **To instantiate a `MathfieldElement`** use the `<math-field>` tag in HTML.
+ * You can also instantiate a `MathfieldElement` programmatically using
+ * `new MathfieldElement()`.
  *
  * ```javascript
  * // 1. Create a new MathfieldElement
@@ -375,23 +358,19 @@ export type InsertStyleHook = (
  *
  * // 2. Attach it to the DOM
  * document.body.appendChild(mf);
+ *
+ * // 3. Modifying options after construction
+ * mf.addEventListener("mount"), () => {
+ *  mf.smartFence = true;
+ * });
  * ```
  *
- * The `MathfieldElement` constructor has an optional argument of
- * `MathfieldOptions` to configure the element. The options can also
- * be modified later:
- *
- * ```javascript
- * // Setting options during construction
- * const mf = new MathfieldElement({ smartFence: false });
- *
- * // Modifying options after construction
- * mf.smartFence = true;
- * ```
+ * Read more about customizing the appearance and behavior of the mathfield in
+ * the [Customizing the Mathfield](mathfield/guides/customizing/) guide.
  *
  * #### MathfieldElement CSS Variables
  *
- * To customize the appearance of the mathfield, declare the following CSS
+ * **To customize the appearance of the mathfield**, declare the following CSS
  * variables (custom properties) in a ruleset that applies to the mathfield.
  *
  * ```css
@@ -405,18 +384,8 @@ export type InsertStyleHook = (
  * ```js
  * document.body.style.setProperty("--hue", "10");
  * ```
- * <div className='symbols-table' style={{"--first-col-width":"25ex"}}>
  *
- * | CSS Variable | Usage |
- * |:---|:---|
- * | `--hue` | Hue of the highlight color and the caret |
- * | `--contains-highlight-background-color` | Backround property for items that contain the caret |
- * | `--primary-color` | Primary accent color, used for example in the virtual keyboard |
- * | `--text-font-family` | The font stack used in text mode |
- * | `--smart-fence-opacity` | Opacity of a smart fence (default is 50%) |
- * | `--smart-fence-color` | Color of a smart fence (default is current color) |
- *
- * </div>
+ * Read more about the [CSS variables](mathfield/guides/customizing/#css-variables) available for customization.
  *
  * You can customize the appearance and zindex of the virtual keyboard panel
  * with some CSS variables associated with a selector that applies to the
@@ -426,13 +395,14 @@ export type InsertStyleHook = (
  *
  * #### MathfieldElement CSS Parts
  *
- * To style the virtual keyboard toggle, use the `virtual-keyboard-toggle` CSS
- * part. To use it, define a CSS rule with a `::part()` selector
- * for example:
+ * In addition to the CSS variables, the mathfield exposes [CSS
+ * parts that can be used to style the mathfield](https://cortexjs.io/mathfield/guides/customizing/#mathfield-parts)
+ *
+ * For example, to hide the menu button:
  *
  * ```css
- * math-field::part(virtual-keyboard-toggle) {
- *  color: red;
+ * math-field::part(menu-toggle) {
+ *  display: none;
  * }
  * ```
  *
@@ -451,19 +421,20 @@ export type InsertStyleHook = (
  * The property can also be changed directly on the `MathfieldElement` object:
  *
  * ```javascript
- *  getElementById('mf').value = "\\sin x";
- *  getElementById('mf').letterShapeStyle = "text";
+ *  mf.value = "\\sin x";
+ *  mf.letterShapeStyle = "text";
  * ```
  *
  * The values of attributes and properties are reflected, which means you can
  * change one or the other, for example:
  *
  * ```javascript
- * getElementById('mf').setAttribute('letter-shape-style',  'french');
- * console.log(getElementById('mf').letterShapeStyle);
+ * mf.setAttribute('letter-shape-style',  'french');
+ * console.log(mf.letterShapeStyle);
  * // Result: "french"
- * getElementById('mf').letterShapeStyle ='tex;
- * console.log(getElementById('mf').getAttribute('letter-shape-style');
+ *
+ * mf.letterShapeStyle ='tex;
+ * console.log(mf.getAttribute('letter-shape-style');
  * // Result: 'tex'
  * ```
  *
@@ -495,7 +466,7 @@ export type InsertStyleHook = (
  *
  * </div>
  *
- * See `MathfieldOptions` for more details about these options.
+ * See the corresponding property for more details about these options.
  *
  * In addition, the following [global attributes](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes)
  * can also be used:
@@ -510,7 +481,7 @@ export type InsertStyleHook = (
  *
  * #### MathfieldElement Events
  *
- * Listen to these events by using `addEventListener()`. For events with
+ * Listen to these events by using `mf.addEventListener()`. For events with
  * additional arguments, the arguments are available in `event.detail`.
  *
  * <div className='symbols-table' style={{"--first-col-width":"27ex"}}>
@@ -529,19 +500,19 @@ export type InsertStyleHook = (
  * | `geometrychange` | The geometry of the virtual keyboard has changed. The `evt.detail.boundingRect` property is the new bounding rectangle of the virtual keyboard. Listen for this event on `window.mathVirtualKeyboard` |
  * | `blur` | The mathfield is losing focus |
  * | `focus` | The mathfield is gaining focus |
- * | `move-out` | The user has pressed an **arrow** key or the **tab** key, but there is nowhere to go. This is an opportunity to change the focus to another element if desired. <br\> `detail: \{direction: 'forward' | 'backward' | 'upward' | 'downward'\}` **cancellable**|
+ * | `move-out` | The user has pressed an **arrow** key or the **tab** key, but there is nowhere to go. This is an opportunity to change the focus to another element if desired. <br/> `detail: \{direction: 'forward' | 'backward' | 'upward' | 'downward'\}` **cancellable**|
  * | `keypress` | The user pressed a physical keyboard key |
  * | `mount` | The element has been attached to the DOM |
  * | `unmount` | The element is about to be removed from the DOM |
  *
  * </div>
- *
- * @category Web Component
+ * @category Mathfield
  * @keywords zindex, events, attribute, attributes, property, properties, parts, variables, css, mathfield, mathfieldelement
-
+ *
  */
 export class MathfieldElement extends HTMLElement implements Mathfield {
   static version = '{{SDK_VERSION}}';
+  /** @internal */
   static get formAssociated(): boolean {
     return isElementInternalsSupported();
   }
@@ -709,7 +680,11 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    *     well.
    *
    * The value of the properties should be either a string, the name of an
-   * audio file in the `soundsDirectory` directory or `null` to suppress the sound.
+   * audio file in the `soundsDirectory` directory or `null` to suppress
+   * the sound.
+   *
+   * If the `soundsDirectory` is `null`, no sound will be played.
+   *
    * @category Virtual Keyboard
    */
   static get keypressSound(): Readonly<{
@@ -778,7 +753,10 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    *
    * The property is either:
    * - a string, the name of an audio file in the `soundsDirectory` directory
-   * - null to turn off the sound
+   * - `null` to turn off the sound
+   *
+   * If the `soundsDirectory` is `null`, no sound will be played.
+   *
    */
   static get plonkSound(): string | null {
     return this._plonkSound;
@@ -799,11 +777,14 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   }
 
   /**
-   * Support for [Trusted Type](https://w3c.github.io/webappsec-trusted-types/dist/spec/).
+   * Support for [Trusted Type](https://www.w3.org/TR/trusted-types/).
    *
    * This optional function will be called before a string of HTML is
    * injected in the DOM, allowing that string to be sanitized
    * according to a policy defined by the host.
+   *
+   * Consider using this option if you are displaying untrusted content. Read more about [Security Considerations](mathfield/guides/security/)
+   *
    */
   static createHTML: (html: string) => any = (x) => x;
   // @todo https://github.com/microsoft/TypeScript/issues/30024
@@ -818,6 +799,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    *
    * **See**
    * {@link mathfield/guides/speech/ | Guide: Speech}
+   * @category Speech
    */
   static get speechEngine(): 'local' | 'amazon' {
     return this._speechEngine;
@@ -836,6 +818,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    *
    * Range is `20%` to `200%` For example `200%` to indicate a speaking rate
    * twice the default rate.
+   * @category Speech
    */
   static get speechEngineRate(): string {
     return this._speechEngineRate;
@@ -852,6 +835,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    * This is dependent on the speech engine. For Amazon Polly, see here:
    * https://docs.aws.amazon.com/polly/latest/dg/voicelist.html
    *
+   * @category Speech
    */
   static get speechEngineVoice(): string {
     return this._speechEngineVoice;
@@ -867,6 +851,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    *
    * Possible values are `ssml` for the SSML markup or `mac` for the macOS
    * markup, i.e. `&#91;&#91;ltr&#93;&#93;`.
+   * @category Speech
    *
    */
   static get textToSpeechMarkup(): '' | 'ssml' | 'ssml_step' | 'mac' {
@@ -892,6 +877,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    *
    * **See**
    * {@link mathfield/guides/speech/ | Guide: Speech}
+   * @category Speech
    */
   static get textToSpeechRules(): 'mathlive' | 'sre' {
     return this._textToSpeechRules;
@@ -910,6 +896,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    * There are no options available with MathLive's built-in engine. The
    * options for the SRE engine are documented
    * {@link https://github.com/zorkow/speech-rule-engine | here}
+   * @category Speech
    */
   static get textToSpeechRulesOptions(): Readonly<Record<string, string>> {
     return this._textToSpeechRulesOptions;
@@ -920,7 +907,9 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   /** @internal */
   private static _textToSpeechRulesOptions: Record<string, string> = {};
 
+  /** @category Speech */
   static speakHook: (text: string) => void = defaultSpeakHook;
+  /** @category Speech */
   static readAloudHook: (element: HTMLElement, text: string) => void =
     defaultReadAloudHook;
 
@@ -991,6 +980,8 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    * This is behavior consistent with `<textarea>`, however it can be
    * disabled if it is not desired.
    *
+   * **Default**: `true`
+   * @category Customization
    */
   static restoreFocusWhenDocumentFocused = true;
 
@@ -1016,7 +1007,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   static set decimalSeparator(value: ',' | '.') {
     this._decimalSeparator = value;
     if (this._computeEngine) {
-      this._computeEngine.latexOptions.decimalMarker =
+      this._computeEngine.decimalSeparator =
         this.decimalSeparator === ',' ? '{,}' : '.';
     }
   }
@@ -1036,9 +1027,9 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   /**
    * When using the keyboard to navigate a fraction, the order in which the
    * numerator and navigator are traversed:
-   * - "numerator-denominator": first the elements in the numerator, then
+   * - `"numerator-denominator"`: first the elements in the numerator, then
    *   the elements in the denominator.
-   * - "denominator-numerator": first the elements in the denominator, then
+   * - `"denominator-numerator"`: first the elements in the denominator, then
    *   the elements in the numerator. In some East-Asian cultures, fractions
    *   are read and written denominator first ("fēnzhī"). With this option
    *   the keyboard navigation follows this convention.
@@ -1046,9 +1037,23 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    * **Default**: `"numerator-denominator"`
    * @category Localization
    */
-  static fractionNavigationOrder:
+  static get fractionNavigationOrder():
     | 'numerator-denominator'
-    | 'denominator-numerator' = 'numerator-denominator';
+    | 'denominator-numerator' {
+    return _MathEnvironment.fractionNavigationOrder;
+  }
+  static set fractionNavigationOrder(
+    s: 'numerator-denominator' | 'denominator-numerator'
+  ) {
+    if (s !== 'numerator-denominator' && s !== 'denominator-numerator')
+      throw new Error('Invalid value');
+    if (_MathEnvironment.fractionNavigationOrder === s) return;
+
+    _MathEnvironment.fractionNavigationOrder = s;
+
+    // Invalidate all mathfields on the page
+    reparseAllMathfields();
+  }
 
   /**
    * A custom compute engine instance. If none is provided, a default one is
@@ -1064,7 +1069,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
       this._computeEngine = new ComputeEngineCtor();
 
       if (this._computeEngine && this.decimalSeparator === ',')
-        this._computeEngine.latexOptions.decimalMarker = '{,}';
+        this._computeEngine.decimalSeparator = '{,}';
     }
     return this._computeEngine ?? null;
   }
@@ -1098,9 +1103,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   static set isFunction(value: (command: string) => boolean) {
     this._isFunction = value;
 
-    document.querySelectorAll('math-field').forEach((el) => {
-      if (el instanceof MathfieldElement) reparse(el._mathfield);
-    });
+    reparseAllMathfields();
   }
 
   static async loadSound(
@@ -1299,6 +1302,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
     if (options) this._setOptions(options);
   }
 
+  /** @category Menu */
   showMenu(_: {
     location: { x: number; y: number };
     modifiers: KeyboardModifiers;
@@ -1353,13 +1357,13 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   }
 
   /**
-   * @inheritDoc _Mathfield#getPromptValue
-   * @category Prompts */
+   * Return the content of the `\placeholder{}` command with the `placeholderId`
+   * @category Prompts
+   */
   getPromptValue(placeholderId: string, format?: OutputFormat): string {
     return this._mathfield?.getPromptValue(placeholderId, format) ?? '';
   }
 
-  /**  {@inheritDoc _Mathfield.setPromptValue} */
   /** @category Prompts */
   setPromptValue(
     id: string,
@@ -1397,14 +1401,17 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
     return this._mathfield?.getPrompts(filter) ?? [];
   }
 
+  /** @internal */
   get form(): HTMLFormElement | null {
     return this._internals?.['form'];
   }
 
+  /** @internal */
   get name(): string {
     return this.getAttribute('name') ?? '';
   }
 
+  /** @internal */
   get type(): string {
     return this.localName;
   }
@@ -1630,7 +1637,23 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @inheritDoc _Mathfield.executeCommand
+   * Execute a [`command`](#commands) defined by a selector.
+   * ```javascript
+   * mfe.executeCommand('add-column-after');
+   * mfe.executeCommand(['switch-mode', 'math']);
+   * ```
+   *
+   * @param selector - A selector, or an array whose first element
+   * is a selector, and whose subsequent elements are arguments to the selector.
+   *
+   * Selectors can be passed either in camelCase or kebab-case.
+   *
+   * ```javascript
+   * // Both calls do the same thing
+   * mfe.executeCommand('selectAll');
+   * mfe.executeCommand('select-all');
+   * ```
+   * @category Commands
    */
   executeCommand(selector: Selector): boolean;
   executeCommand(selector: Selector, ...args: unknown[]): boolean;
@@ -1647,8 +1670,19 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @inheritDoc _Mathfield.getValue */
-  /** @category Accessing and changing the content
+   * Return a textual representation of the content of the mathfield.
+   *
+   * @param format - The format of the result. If using `math-json`
+   * the Compute Engine library must be loaded, for example with:
+   *
+   * ```js
+import "https://unpkg.com/@cortex-js/compute-engine?module";
+```
+   *
+   *
+   * **Default:** `"latex"`
+   *
+   * @category Accessing and changing the content
    */
   getValue(format?: OutputFormat): string;
   getValue(start: Offset, end: Offset, format?: OutputFormat): string;
@@ -1694,7 +1728,9 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @inheritDoc _Mathfield.setValue
+   * Set the content of the mathfield to the text interpreted as a
+   * LaTeX expression.
+   *
    * @category Accessing and changing the content
    */
   setValue(value?: string, options?: InsertOptions): void {
@@ -1729,7 +1765,8 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @inheritDoc _Mathfield.hasFocus
+   * Return true if the mathfield is currently focused (responds to keyboard
+   * input).
    *
    * @category Focus
    *
@@ -1768,7 +1805,13 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @inheritDoc _Mathfield.insert
+   * Insert a block of text at the current insertion point.
+   *
+   * This method can be called explicitly or invoked as a selector with
+   * `executeCommand("insert")`.
+   *
+   * After the insertion, the selection will be set according to the
+   * `options.selectionMode`.
 
    *  @category Accessing and changing the content
    */
@@ -1777,9 +1820,28 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @inheritDoc _Mathfield.applyStyle
+   * Update the style (color, bold, italic, etc...) of the selection or sets
+   * the style to be applied to future input.
    *
-   * @category Accessing and changing the content
+   * If there is no selection and no range is specified, the style will
+   * apply to the next character typed.
+   *
+   * If a range is specified, the style is applied to the range, otherwise,
+   * if there is a selection, the style is applied to the selection.
+   *
+   * If the operation is `"toggle"` and the range already has this style,
+   * remove it. If the range
+   * has the style partially applied (i.e. only some sections), remove it from
+   * those sections, and apply it to the entire range.
+   *
+   * If the operation is `"set"`, the style is applied to the range,
+   * whether it already has the style or not.
+   *
+   * The default operation is `"set"`.
+   *
+   *
+   *
+   * @category Styles
    */
   applyStyle(
     style: Readonly<Style>,
@@ -1796,7 +1858,7 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
    * (determined by a combination of the style of the previous atom and
    * the current style) matches the `style` argument, 'none' if it does not.
    *
-   * @category Accessing and changing the content
+   * @category Styles
    */
   queryStyle(style: Readonly<Style>): 'some' | 'all' | 'none' {
     return this._mathfield?.queryStyle(style) ?? 'none';
@@ -1866,13 +1928,15 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     // Ignore blur events if the scrim is open (case where the variant panel
     // is open), or if we're in an iFrame on a touch device (see #2350).
 
+    if (evt.type !== 'blur') return;
+
+    const touch = isTouchCapable();
+
+    if (touch && window?.mathVirtualKeyboard?.visible) return;
     // Otherwise we disconnect from the VK and end up in a weird state.
-    if (
-      evt.type === 'blur' &&
-      Scrim.scrim?.state === 'closed' &&
-      !(isTouchCapable() && isInIframe())
-    )
-      this._mathfield?.blur();
+    if (Scrim.scrim?.state !== 'closed' || (touch && isInIframe())) return;
+
+    this._mathfield?.blur();
   }
 
   /**
@@ -2078,6 +2142,11 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
       case 'contenteditable':
         requestUpdate(this._mathfield);
         break;
+      case 'placeholder':
+        if (newValue === false) newValue = '';
+        this.placeholder = newValue as string;
+        break;
+
       case 'disabled':
         this.disabled = hasValue;
         break;
@@ -2150,16 +2219,16 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   get value(): string {
     return this.getValue();
   }
-
-  /**
-   *  @category Accessing and changing the content
-   */
   set value(value: string) {
     this.setValue(value);
   }
 
-  /** @category Customization
-   * @inheritDoc LayoutOptions.defaultMode
+  /**
+   * The mode of the element when it is empty:
+   * - `"math"`: equivalent to `\displaystyle` (display math mode)
+   * - `"inline-math"`: equivalent to `\inlinestyle` (inline math mode)
+   * - `"text"`: text mode
+   * @category Customization
    */
   get defaultMode(): 'inline-math' | 'math' | 'text' {
     return this._getOption('defaultMode');
@@ -2168,8 +2237,28 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ defaultMode: value });
   }
 
-  /** @category Customization
-   * @inheritDoc LayoutOptions.macros
+  /** 
+   * A dictionary of LaTeX macros to be used to interpret and render the content.
+   *
+   * For example, to add a new macro to the default macro dictionary:
+   *
+```javascript
+mf.macros = {
+  ...mf.macros,
+  smallfrac: '^{#1}\\!\\!/\\!_{#2}',
+};
+```
+   *
+   * Note that `...mf.macros` is used to keep the existing macros and add to
+   * them.
+   * Otherwise, all the macros are replaced with the new definition.
+   *
+   * The code above will support the following notation:
+   *
+    ```tex
+    \smallfrac{5}{16}
+    ```
+    @category Macros
    */
   get macros(): Readonly<MacroDictionary> {
     if (!this._mathfield) throw new Error('Mathfield not mounted');
@@ -2179,10 +2268,11 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ macros: value });
   }
 
-  /** @category Customization
+  /**
    * @inheritDoc Registers
+   * @category Registers
    */
-  get registers(): Readonly<Registers> {
+  get registers(): Registers {
     if (!this._mathfield) throw new Error('Mathfield not mounted');
     const that = this;
     return new Proxy(
@@ -2199,6 +2289,20 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
           });
           return true;
         },
+        ownKeys: (): (string | symbol)[] =>
+          Reflect.ownKeys(that._getOption('registers')),
+        getOwnPropertyDescriptor: (_, prop) => {
+          const value = that._getOption('registers')[prop as string];
+          if (value !== undefined) {
+            return {
+              configurable: true,
+              enumerable: true,
+              value,
+              writable: true,
+            };
+          }
+          return undefined;
+        },
       }
     );
   }
@@ -2207,9 +2311,28 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ registers: value });
   }
 
-  /** @category Customization
+  /**
+   * Map a color name as used in commands such as `\textcolor{}{}` or
+   * `\colorbox{}{}` to a CSS color value.
+   *
+   * Use this option to override the standard mapping of colors such as "yellow"
+   * or "red".
+   *
+   * If the name is not one you expected, return `undefined` and the default
+   * color mapping will be applied.
+   *
+   * If a `backgroundColorMap()` function is not provided, the `colorMap()`
+   * function will be used instead.
+   *
+   * If `colorMap()` is not provided, default color mappings are applied.
+   *
+   * The following color names have been optimized for a legible foreground
+   * and background values, and are recommended:
+   * - `red`, `orange`, `yellow`, `lime`, `green`, `teal`, `blue`, `indigo`,
+   * `purple`, `magenta`, `black`, `dark-grey`, `grey`, `light-grey`, `white`
+   *
+   * @category Customization
    */
-  /** {@inheritDoc LayoutOptions.colorMap} */
   get colorMap(): (name: string) => string | undefined {
     return this._getOption('colorMap');
   }
@@ -2218,7 +2341,6 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /** @category Customization */
-  /** {@inheritDoc LayoutOptions.backgroundColorMap} */
   get backgroundColorMap(): (name: string) => string | undefined {
     return this._getOption('backgroundColorMap');
   }
@@ -2226,8 +2348,36 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ backgroundColorMap: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc LayoutOptions.letterShapeStyle} */
+  /** 
+  * Control the letter shape style:
+
+  | `letterShapeStyle` | xyz | ABC | αβɣ | ΓΔΘ |
+  | ------------------ | --- | --- | --- | --- |
+  | `iso`              | it  | it  | it  | it  |
+  | `tex`              | it  | it  | it  | up  |
+  | `french`           | it  | up  | up  | up  |
+  | `upright`          | up  | up  | up  | up  |
+
+  (it) = italic (up) = upright
+
+  * The default letter shape style is `auto`, which indicates that `french`
+  * should be used if the locale is "french", and `tex` otherwise.
+  *
+  * **Historical Note**
+  *
+  * Where do the "french" rules come from? The
+  * TeX standard font, Computer Modern, is based on Monotype 155M, itself
+  * based on the Porson greek font which was one of the most widely used
+  * Greek fonts in english-speaking countries. This font had upright
+  * capitals, but slanted lowercase. In France, the traditional font for
+  * greek was Didot, which has both upright capitals and lowercase.
+  *
+  * As for roman uppercase, they are recommended by "Lexique des règles
+  * typographiques en usage à l’Imprimerie Nationale". It should be noted
+  * that this convention is not universally followed.
+  * 
+  * @category Customization 
+*/
   get letterShapeStyle(): 'auto' | 'tex' | 'iso' | 'french' | 'upright' {
     return this._getOption('letterShapeStyle');
   }
@@ -2235,8 +2385,16 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ letterShapeStyle: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc LayoutOptions.minFontScale} */
+  /**
+   * Set the minimum relative font size for nested superscripts and fractions. The value
+   * should be a number between `0` and `1`. The size is in releative `em` units relative to the
+   * font size of the `math-field` element. Specifying a value of `0` allows the `math-field`
+   * to use its default sizing logic.
+   *
+   * **Default**: `0`
+   *
+   * @category Customization
+   */
   get minFontScale(): number {
     return this._getOption('minFontScale');
   }
@@ -2244,8 +2402,13 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ minFontScale: value });
   }
 
-  /** @category Customization */
-  /**  {@inheritDoc LayoutOptions.maxMatrixCols} */
+  /**
+   * Sets the maximum number of columns for the matrix environment. The default is
+   * 10 columns to match the behavior of the amsmath matrix environment.
+   * **Default**: `10`
+   *
+   * @category Customization
+   */
   get maxMatrixCols(): number {
     return this._getOption('maxMatrixCols');
   }
@@ -2253,8 +2416,43 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ maxMatrixCols: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc EditingOptions.smartMode}*/
+  /**
+   * When `true`, during text input the field will switch automatically between
+   * 'math' and 'text' mode depending on what is typed and the context of the
+   * formula. If necessary, what was previously typed will be 'fixed' to
+   * account for the new info.
+   *
+   * For example, when typing "if x >0":
+   *
+   * | Type  | Interpretation |
+   * |---:|:---|
+   * | `i` | math mode, imaginary unit |
+   * | `if` | text mode, english word "if" |
+   * | `if x` | all in text mode, maybe the next word is xylophone? |
+   * | `if x >` | "if" stays in text mode, but now "x >" is in math mode |
+   * | `if x > 0` | "if" in text mode, "x > 0" in math mode |
+   *
+   * **Default**: `false`
+   *
+   * Manually switching mode (by typing `alt/option+=`) will temporarily turn
+   * off smart mode.
+   *
+   *
+   * **Examples**
+   *
+   * - `slope = rise/run`
+   * - `If x > 0, then f(x) = sin(x)`
+   * - `x^2 + sin (x) when x > 0`
+   * - `When x&lt;0, x^{2n+1}&lt;0`
+   * - `Graph x^2 -x+3 =0 for 0&lt;=x&lt;=5`
+   * - `Divide by x-3 and then add x^2-1 to both sides`
+   * - `Given g(x) = 4x – 3, when does g(x)=0?`
+   * - `Let D be the set {(x,y)|0&lt;=x&lt;=1 and 0&lt;=y&lt;=x}`
+   * - `\int\_{the unit square} f(x,y) dx dy`
+   * - `For all n in NN`
+   *
+   * @category Customization
+   */
   get smartMode(): boolean {
     return this._getOption('smartMode');
   }
@@ -2262,8 +2460,15 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ smartMode: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc EditingOptions.smartFence}*/
+  /**
+   *
+   * When `true` and an open fence is entered via `typedText()` it will
+   * generate a contextually appropriate markup, for example using
+   * `\left...\right` if applicable.
+   *
+   * When `false`, the literal value of the character will be inserted instead.
+   * @category Customization
+   */
   get smartFence(): boolean {
     return this._getOption('smartFence');
   }
@@ -2271,8 +2476,18 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ smartFence: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc EditingOptions.smartSuperscript} */
+  /**
+   * When `true` and a digit is entered in an empty superscript, the cursor
+   * leaps automatically out of the superscript. This makes entry of common
+   * polynomials easier and faster. If entering other characters (for example
+   * "n+1") the navigation out of the superscript must be done manually (by
+   * using the cursor keys or the spacebar to leap to the next insertion
+   * point).
+   *
+   * When `false`, the navigation out of the superscript must always be done
+   * manually.
+   * @category Customization
+   */
   get smartSuperscript(): boolean {
     return this._getOption('smartSuperscript');
   }
@@ -2280,8 +2495,22 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ smartSuperscript: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc EditingOptions.scriptDepth} */
+  /**
+   * This option controls how many levels of subscript/superscript can be entered. For
+   * example, if `scriptDepth` is "1", there can be one level of superscript or
+   * subscript. Attempting to enter a superscript while inside a superscript will
+   * be rejected. Setting a value of 0 will prevent entry of any superscript or
+   * subscript (but not limits for sum, integrals, etc...)
+   *
+   * This can make it easier to enter equations that fit what's expected for the
+   * domain where the mathfield is used.
+   *
+   * To control the depth of superscript and subscript independently, provide an
+   * array: the first element indicate the maximum depth for subscript and the
+   * second element the depth of superscript. Thus, a value of `[0, 1]` would
+   * suppress the entry of subscripts, and allow one level of superscripts.
+   * @category Customization
+   */
   get scriptDepth(): number | [number, number] {
     return this._getOption('scriptDepth');
   }
@@ -2289,8 +2518,13 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ scriptDepth: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc EditingOptions.removeExtraneousParentheses} */
+  /**
+   * If `true`, extra parentheses around a numerator or denominator are
+   * removed automatically.
+   *
+   * **Default**: `true`
+   * @category Customization
+   */
   get removeExtraneousParentheses(): boolean {
     return this._getOption('removeExtraneousParentheses');
   }
@@ -2298,8 +2532,19 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ removeExtraneousParentheses: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc EditingOptions.mathModeSpace} */
+  /**
+   * The LaTeX string to insert when the spacebar is pressed (on the physical or
+   * virtual keyboard).
+   *
+   * Use `"\;"` for a thick space, `"\:"` for a medium space, `"\,"` for a
+   * thin space.
+   *
+   * Do not use `" "` (a regular space), as whitespace is skipped by LaTeX
+   * so this will do nothing.
+   *
+   * **Default**: `""` (empty string)
+   * @category Customization
+   */
   get mathModeSpace(): string {
     return this._getOption('mathModeSpace');
   }
@@ -2307,8 +2552,14 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ mathModeSpace: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc EditingOptions.placeholderSymbol} */
+  /**
+   * The symbol used to represent a placeholder in an expression.
+   *
+   * **Default**: `▢` `U+25A2 WHITE SQUARE WITH ROUNDED CORNERS`
+   *
+   * @category Customization
+   */
+
   get placeholderSymbol(): string {
     return this._getOption('placeholderSymbol');
   }
@@ -2316,8 +2567,27 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ placeholderSymbol: value });
   }
 
-  /** @category Customization */
-  /** {@inheritDoc EditingOptions.popoverPolicy} */
+  /**
+   * A LaTeX string displayed inside the mathfield when there is no content.
+   * @category Customization
+   */
+  get placeholder(): string {
+    return this.getAttribute('placeholder') ?? '';
+  }
+
+  set placeholder(value: string) {
+    if (typeof value !== 'string') return;
+    this._mathfield?.setOptions({ contentPlaceholder: value });
+  }
+
+  /**
+   * If `"auto"` a popover with suggestions may be displayed when a LaTeX
+   * command is input.
+   *
+   * **Default**: `"auto"`
+   *
+   * @category Customization
+   */
   get popoverPolicy(): 'auto' | 'off' {
     return this._getOption('popoverPolicy');
   }
@@ -2326,8 +2596,14 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @category Customization */
-  /** {@inheritDoc EditingOptions.environmentPopoverPolicy}   */
+   *
+   * If `"auto"` a popover with commands to edit an environment (matrix)
+   * is displayed when the virtual keyboard is displayed.
+   *
+   * **Default**: `"auto"`
+   *
+   * @category Customization
+   */
   get environmentPopoverPolicy(): 'auto' | 'off' | 'on' {
     return this._getOption('environmentPopoverPolicy');
   }
@@ -2336,7 +2612,7 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @category Customization
+   * @category Menu
    */
 
   get menuItems(): Readonly<MenuItem[]> {
@@ -2357,10 +2633,8 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   }
 
   /**
-   * @category Customization
    * @category Virtual Keyboard
    */
-  /**    * {@inheritDoc EditingOptions.mathVirtualKeyboardPolicy} */
   get mathVirtualKeyboardPolicy(): VirtualKeyboardPolicy {
     return this._getOption('mathVirtualKeyboardPolicy');
   }
@@ -2368,8 +2642,11 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ mathVirtualKeyboardPolicy: value });
   }
 
-  /** @category Customization */
-  /**    * {@inheritDoc EditingOptions.inlineShortcuts} */
+  /**
+   * The keys of this object literal indicate the sequence of characters
+   * that will trigger an inline shortcut.
+   * @category Keyboard Shortcuts
+   */
   get inlineShortcuts(): Readonly<InlineShortcutDefinitions> {
     if (!this._mathfield) throw new Error('Mathfield not mounted');
     return this._getOption('inlineShortcuts');
@@ -2379,8 +2656,28 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ inlineShortcuts: value });
   }
 
-  /** @category Customization
-   * {@inheritDoc EditingOptions.inlineShortcutTimeout}
+  /**
+   * Maximum time, in milliseconds, between consecutive characters for them to be
+   * considered part of the same shortcut sequence.
+   *
+   * A value of 0 is the same as infinity: any consecutive character will be
+   * candidate for an inline shortcut, regardless of the interval between this
+   * character and the previous one.
+   *
+   * A value of 750 will indicate that the maximum interval between two
+   * characters to be considered part of the same inline shortcut sequence is
+   * 3/4 of a second.
+   *
+   * This is useful to enter "+-" as a sequence of two characters, while also
+   * supporting the "±" shortcut with the same sequence.
+   *
+   * The first result can be entered by pausing slightly between the first and
+   * second character if this option is set to a value of 250 or so.
+   *
+   * Note that some operations, such as clicking to change the selection, or
+   * losing the focus on the mathfield, will automatically timeout the
+   * shortcuts.
+   * @category Keyboard Shortcuts
    */
   get inlineShortcutTimeout(): number {
     return this._getOption('inlineShortcutTimeout');
@@ -2389,8 +2686,7 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ inlineShortcutTimeout: value });
   }
 
-  /** @category Customization   */
-  /**    * {@inheritDoc EditingOptions.keybindings} */
+  /** @category Keyboard Shortcuts   */
   get keybindings(): Readonly<Keybinding[]> {
     if (!this._mathfield) throw new Error('Mathfield not mounted');
     return this._getOption('keybindings');
@@ -2400,11 +2696,10 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ keybindings: value });
   }
 
-  /** @category Hooks
-   * @inheritDoc _MathfieldHooks.onInsertStyle
+  /** @category Styles
    */
   get onInsertStyle(): InsertStyleHook | undefined | null {
-    let hook = this._getOption('onInsertStyle');
+    const hook = this._getOption('onInsertStyle');
     if (hook === undefined) return defaultInsertStyleHook;
     return hook;
   }
@@ -2412,8 +2707,15 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ onInsertStyle: value });
   }
 
-  /** @category Hooks
-   * @inheritDoc _MathfieldHooks.onInlineShortcut
+  /**
+   * A hook invoked when a string of characters that could be
+   * interpreted as shortcut has been typed.
+   *
+   * If not a special shortcut, return the empty string `""`.
+   *
+   * Use this handler to detect multi character symbols, and return them wrapped appropriately,
+   * for example `\mathrm{${symbol}}`.
+   * @category Hooks
    */
   get onInlineShortcut(): (sender: Mathfield, symbol: string) => string {
     return this._getOption('onInlineShortcut');
@@ -2422,8 +2724,12 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ onInlineShortcut: value });
   }
 
-  /** @category Hooks
-   * @inheritDoc _MathfieldHooks.onScrollIntoView
+  /**
+   * A hook invoked when scrolling the mathfield into view is necessary.
+   *
+   * Use when scrolling the page would not solve the problem, e.g.
+   * when the mathfield is in another div that has scrollable content.
+   * @category Hooks
    */
   get onScrollIntoView(): ((sender: Mathfield) => void) | null {
     return this._getOption('onScrollIntoView');
@@ -2432,8 +2738,22 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ onScrollIntoView: value });
   }
 
-  /** @category Hooks
-   * @inheritDoc _MathfieldHooks.onExport
+  /**
+   * This hook is invoked when the user has requested to export the content
+   * of the mathfield, for example when pressing ctrl/command+C.
+   *
+   * This hook should return as a string what should be exported.
+   *
+   * The `range` argument indicates which portion of the mathfield should be
+   * exported. It is not always equal to the current selection, but it can
+   * be used to export a format other than LaTeX.
+   *
+   * By default this is:
+   *
+   * ```js
+   *  return `\\begin{equation*}${latex}\\end{equation*}`;
+   * ```
+   * @category Hooks
    */
   get onExport(): (from: Mathfield, latex: string, range: Range) => string {
     return this._getOption('onExport');
@@ -2451,6 +2771,9 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
     this._setOptions({ readOnly: value });
   }
 
+  /**
+   * This is a standard DOM property
+   * @internal */
   get isSelectionEditable(): boolean {
     return this._mathfield?.isSelectionEditable ?? false;
   }
@@ -2463,6 +2786,7 @@ import 'https://unpkg.com/@cortex-js/compute-engine?module';
   ): void {
     this._mathfield?.setPromptState(id, state, locked);
   }
+  /** @category Prompts */
   getPromptState(id: string): ['correct' | 'incorrect' | undefined, boolean] {
     return this._mathfield?.getPromptState(id) ?? [undefined, true];
   }
