@@ -204,7 +204,7 @@ export class _Mathfield implements Mathfield, KeyboardDelegateInterface {
   private geometryChangeTimer: ReturnType<typeof requestAnimationFrame>;
 
   /** When true, the mathfield is listening to the virtual keyboard */
-  private connectedToVirtualKeyboard: boolean;
+  private connectedToVirtualKeyboard = false;
 
   private eventController: AbortController;
   resizeObserver: ResizeObserver;
@@ -313,7 +313,7 @@ export class _Mathfield implements Mathfield, KeyboardDelegateInterface {
     // Start with hidden content to minimize flashing during creation
     // The visibility will be reset during render
     markup.push(
-      '<span part=container class=ML__container aria-hidden=true  style="visibility:hidden">'
+      '<span part=container class=ML__container  style="visibility:hidden">'
     );
     markup.push('<span part=content class=ML__content>');
     markup.push(contentMarkup(this));
@@ -841,6 +841,13 @@ If you are using Vue, this may be because you are using the runtime-only build o
 
       case 'virtual-keyboard-toggle':
         if (this.hasFocus()) updateEnvironmentPopover(this);
+        // Workaround a Chromium 133+ issue where the keyboard sink loses focus
+        // when the virtual keyboard is shown
+        // https://github.com/arnog/mathlive/issues/2588
+        if (this.hasFocus()) {
+          this.keyboardDelegate.blur();
+          this.keyboardDelegate.focus();
+        }
         break;
 
       case 'resize':
@@ -1301,9 +1308,8 @@ If you are using Vue, this may be because you are using the runtime-only build o
   }
 
   focus(options?: FocusOptions): void {
+    if (this.focusBlurInProgress) return;
     if (!this.hasFocus()) {
-      this.keyboardDelegate.focus();
-      this.connectToVirtualKeyboard();
       this.onFocus();
       this.model.announce('line');
     }
@@ -1517,6 +1523,8 @@ If you are using Vue, this may be because you are using the runtime-only build o
 
   popUndoStack(): void {
     this.undoManager.pop();
+    if (window.mathVirtualKeyboard.visible)
+      window.mathVirtualKeyboard.update(makeProxy(this));
   }
 
   snapshot(op?: string): void {
@@ -1629,7 +1637,7 @@ If you are using Vue, this may be because you are using the runtime-only build o
         new InputEvent('beforeinput', {
           ...options,
           // To work around a bug in WebKit/Safari (the inputType property gets stripped), include the inputType as the 'data' property. (see #1843)
-          data: options.data ? options.data : options.inputType ?? '',
+          data: options.data ? options.data : (options.inputType ?? ''),
           cancelable: true,
           bubbles: true,
           composed: true,
@@ -1642,12 +1650,8 @@ If you are using Vue, this may be because you are using the runtime-only build o
     if (this.focusBlurInProgress || !this.blurred) return;
     this.focusBlurInProgress = true;
     this.blurred = false;
-    // As a side effect, a `focus` and `focusin` events will be dispatched
-    this.keyboardDelegate.focus();
 
     this.stopCoalescingUndo();
-
-    render(this, { interactive: true });
 
     // Save the current value.
     // It will be compared in `onBlur()` to see if the
@@ -1663,7 +1667,34 @@ If you are using Vue, this may be because you are using the runtime-only build o
     )
       this.executeCommand('moveToNextPlaceholder');
 
-    this.focusBlurInProgress = false;
+    render(this, { interactive: true });
+
+    setTimeout(() => {
+      if (!isValidMathfield(this)) return;
+
+      //
+      // Capture the focus/blur events to avoid double-dispatching
+      //
+      const abortController = new AbortController();
+      const signal = abortController.signal;
+      for (const event of ['focus', 'blur', 'focusin', 'focusout']) {
+        this.host?.addEventListener(
+          event,
+          (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+          },
+          { once: true, capture: true, signal }
+        );
+      }
+
+      this.keyboardDelegate.blur();
+      this.keyboardDelegate.focus();
+      this.connectToVirtualKeyboard();
+      this.focusBlurInProgress = false;
+
+      abortController.abort();
+    }, 60);
   }
 
   onBlur(): void {

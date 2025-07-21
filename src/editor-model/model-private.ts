@@ -19,6 +19,7 @@ import { fromJson } from '../core/atom';
 import { toMathML } from '../formats/atom-to-math-ml';
 
 import { atomToAsciiMath } from '../formats/atom-to-ascii-math';
+import { atomToTypst } from '../formats/atom-to-typst';
 import { atomToSpeakableText } from '../formats/atom-to-speakable-text';
 import { defaultAnnounceHook } from '../editor/a11y';
 
@@ -491,6 +492,8 @@ export class _Model implements Model {
       return result;
     }
 
+    if (format === 'typst') return atomToTypst(atom);
+
     if (format === 'plain-text') return atomToAsciiMath(atom, { plain: true });
 
     if (format === 'ascii-math') return atomToAsciiMath(atom);
@@ -543,7 +546,7 @@ export class _Model implements Model {
       if (!globalThis.MathfieldElement.computeEngine) {
         if (!window[Symbol.for('io.cortexjs.compute-engine')]) {
           console.error(
-            'The CortexJS Compute Engine library is not available.\nLoad the library, for example with:\nimport "https://unpkg.com/@cortex-js/compute-engine?module"'
+            'The CortexJS Compute Engine library is not available.\nLoad the library, for example with:\nimport "https://esm.run/@cortex-js/compute-engine"'
           );
         }
         return '["Error", "compute-engine-not-available"]';
@@ -810,7 +813,7 @@ export class _Model implements Model {
   contentDidChange(options: ContentChangeOptions): void {
     if (window.mathVirtualKeyboard.visible)
       window.mathVirtualKeyboard.update(makeProxy(this.mathfield));
-    if (this.silenceNotifications || !this.mathfield.host || !this.mathfield)
+    if (this.silenceNotifications || !this.mathfield || !this.mathfield.host)
       return;
 
     const save = this.silenceNotifications;
@@ -846,13 +849,13 @@ export class _Model implements Model {
     // The mathfield could be undefined if the mathfield was disposed
     // while the selection was changing
     if (!this.mathfield) return;
-    if (window.mathVirtualKeyboard.visible)
-      window.mathVirtualKeyboard.update(makeProxy(this.mathfield));
 
-    if (this.silenceNotifications) return;
     const save = this.silenceNotifications;
-    this.silenceNotifications = true;
-    this.mathfield.onSelectionDidChange();
+    if (!save) {
+      this.silenceNotifications = true;
+      this.mathfield.onSelectionDidChange();
+    }
+
     this.silenceNotifications = save;
   }
 }

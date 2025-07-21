@@ -1,11 +1,114 @@
+## [Unreleased]
+
+## 0.106.0 _2025-07-11_
+
+### New Features
+
+- Export to **typst** format. Use `mf.getValue("typst")` to get the value of the
+  mathfield in typst format.
+- **#2731** The keybinding `alt+shift+V` now inserts a n<sup>th</sup> root. The
+  existing `alt+V` keybinding continues to insert a square root.
+
+### Resolved Issues
+
+- The commands `\iff`, `\Coloneqq` and `\hArr` did not render correctly.
+- Improved rendering in dark mode.
+- **#2727** Improved rendering of annotations.
+
+## 0.105.3 _2025-05-14_
+
+### Resolved Issues
+
+- Using the kebab version of commands (for example `"select-all"` instead of
+  `"SelectAll"`) would incorrectly result in a runtime error.
+
+- Using a padding with an `\enclose` command would not render the padding
+  correctly. To specify some padding, use
+  `\enclose{updiagonalstrike downdiagonalstrike}[padding="10px", 6px solid rgba(205, 0, 11, .4)]{42}`.
+
+## 0.105.1 _2025-04-18_
+
+### Resolved Issues
+
+- **#2526** In the virtual keyboard, the keycap text over CSS variables was not
+  displayed correctly.
+- **#2567** Avoid potential race condition when changing the focus of the
+  mathfield.
+- **#2638**, **#2479** Fragments that were styled with some color were not
+  rendered correctly when the mathfield was not focused.
+- **#2669** If a page had multiple mathfields, when using the suggestion
+  popover, the suggestion popover would be inserted in the wrong mathfield.
+- **#2584** In some cases, a menu item could get inadvertently selected when
+  when brining up the menu.
+- **#2673** When using the CJS version of the library, the height of the virtual
+  keyboard was not correctly calculated.
+- **#2666** In some cases, the state of the Undo/Redo buttons could get out of
+  sync with the state of the mathfield.
+- **#2667** The edit toolbar was not displayed in the alphabetic keyboard
+  layout.
+
+### Improvements
+
+- Accessibility: Improved support for the high-contrast mode.
+- There is a new CSS variable to control the z-index of the suggestion popover:
+  `--suggestion-zindex`. This allows the suggestion popover to be displayed
+  above other elements on the page.
+- Added support for the `\strut` and `\mathstrut` commands. These commands are
+  used to insert a strut, which is an invisible element that takes up space in
+  the math expression. This is useful for aligning expressions or for creating
+  space between elements.
+- **#2662** When the command popover is displayed, pressing the **Return** key
+  will insert the command in the mathfield and close the popover.
+- **#2658** Improved localization for Italian.
+- **#2671** When inserting a command with an argument with the suggestion
+  popover, position the cursor inside the argument.
+
+## 0.105.0 _2025-03-27_
+
+### Breaking Changes
+
+In order to support alternate CDNs, in particular `jsdelivr`, the file layout of
+the **npm** package has changed. The files that were previously in the `./dist/`
+directory are now in the root of the package. This should not affect most users,
+but if you are importing the library or auxiliary files from the `dist`
+directory, you will need to update your paths.
+
+To use `jsdelivr`, use:
+
+```js
+import { MathfieldElement } from "https://esm.run/mathlive";
+```
+
+or:
+
+```html
+<script defer src="https://cdn.jsdelivr.net/npm/mathlive"></script>
+```
+
+### Issues Resolved
+
+- **#2647**, **#2634**, **#2562** Some accents (`\hat{}`, `\vec{}`) where not
+  rendered correctly in some cases.
+
+- **#2635** In Chrome (and Firefox), clicking on the padding area of the
+  mathfield would not result in the focus getting into a zombie state and
+  keyboard event no longer being dispatched.
+
+## 0.104.2 _2025-03-23_
+
+### Issues Resolved
+
+- **#2588** With Chrome 133+ input with the physical keyboard was disabled after
+  showing the virtual keyboard.
+
 ## 0.104.1 _2025-03-18_
 
 ### Improvements
 
-- Improved support for the `jsdelivr` CDN. To use it, use
+- Improved support for the `jsdelivr` CDN. To use it, use:
 
 ```js
-    import { MathfieldElement } from "https://esm.run/mathlive";
+import { MathfieldElement } from "https://esm.run/mathlive";
 ```
 
 ### Issues Resolved

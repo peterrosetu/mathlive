@@ -73,8 +73,8 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
     ifMode: 'latex',
     command: ['complete', 'accept-suggestion'],
   }, // Complete the suggestion
-  { key: '[Return]', ifMode: 'latex', command: 'complete' },
-  { key: '[Enter]', ifMode: 'latex', command: 'complete' },
+  { key: '[Return]', ifMode: 'latex', command: ['complete', 'accept-all'] },
+  { key: '[Enter]', ifMode: 'latex', command: ['complete', 'accept-all'] },
   {
     key: 'shift+[Escape]',
     ifMode: 'latex',
@@ -192,6 +192,7 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   // MATHLIVE BINDINGS
   { key: 'alt+p', ifMode: 'math', command: ['insert', '\\pi'] },
   { key: 'alt+v', ifMode: 'math', command: ['insert', '\\sqrt{#0}'] },
+  { key: 'alt+shift+v', ifMode: 'math', command: ['insert', '\\sqrt[#0]{#1}'] },
   { key: 'alt+o', ifMode: 'math', command: ['insert', '\\emptyset'] },
   {
     key: 'alt+d',

@@ -105,7 +105,7 @@ export const TEXVC_MACROS: MacroDictionary = {
   exist: '\\exists',
   //  ge: '\\geq', // We have it as a builtin
   //  gggtr: '\\ggg', // We have it as a builtin
-  hAar: '\\Leftrightarrow',
+  hArr: '\\Leftrightarrow',
   harr: '\\leftrightarrow',
   Harr: '\\Leftrightarrow',
   hearts: '\\heartsuit',
@@ -250,11 +250,19 @@ export const BRAKET_MACROS: MacroDictionary = {
 };
 
 const DEFAULT_MACROS: MacroDictionary = {
+  'strut': {
+    primitive: true,
+    def: '\\phantom{\\rule[0.3\\baselineskip]{0}{0.7\\baselineskip}}',
+    args: 0,
+    captureSelection: true,
+  },
+
   'iff': {
     primitive: true,
     captureSelection: true,
-    def: '\\;\\Longleftrightarrow\\;}', // >2,000 Note: additional spaces around the arrows, as per AMSMATH package definition
+    def: '\\;\\Longleftrightarrow\\;', // >2,000 Note: additional spaces around the arrows, as per AMSMATH package definition
   },
+
   'nicefrac': '^{#1}\\!\\!/\\!_{#2}',
 
   'phase': {
@@ -266,6 +274,9 @@ const DEFAULT_MACROS: MacroDictionary = {
   // Proof Wiki
   'rd': '\\mathrm{d}',
   'rD': '\\mathrm{D}',
+
+  // Derivative package
+  'odif': '\\mathrm{d}',
 
   // From Wolfram Alpha
   'doubleStruckCapitalN': '\\mathbb{N}',
@@ -316,7 +327,7 @@ const DEFAULT_MACROS: MacroDictionary = {
       // \providecommand*\coloneqq{\vcentcolon\mathrel{\mkern-1.2mu}=}
       coloneqq: '{\\mathop{\\char"2254}}', // ≔
       // \providecommand*\Coloneqq{\dblcolon\mathrel{\mkern-1.2mu}=}
-      Coloneqq: '{\\mathop{\\char"2a74}}', // ⩴
+      Coloneqq: '{\\mathop{\\char"2A74}}', // ⩴
       // \providecommand*\coloneq{\vcentcolon\mathrel{\mkern-1.2mu}\mathrel{-}}
       coloneq: '{\\mathop{\\char"2254}}', // ≔
       // \providecommand*\Coloneq{\dblcolon\mathrel{\mkern-1.2mu}\mathrel{=}}
