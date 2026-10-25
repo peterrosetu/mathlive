@@ -354,7 +354,7 @@ export class VirtualKeyboard implements VirtualKeyboardInterface, EventTarget {
     if (this.container === document.body) {
       this._element.style.setProperty(
         '--_keyboard-height',
-        `calc(${h}px + var(--_padding-top) + var(--_padding-bottom) + env(safe-area-inset-bottom, 0))`
+        `calc(${h}px + var(--_padding-top) + var(--_padding-bottom))`
       );
       const keyboardHeight = h - 1;
       this.container!.style.paddingBottom = this.originalContainerBottomPadding
@@ -656,9 +656,9 @@ export class VirtualKeyboard implements VirtualKeyboardInterface, EventTarget {
       // don't handle it here (the iframe's mathfield will handle it)
       if (window === window.top && source !== window) return;
 
-      // If we're in the top window and receiving our own message for a
-      // mathfield command, don't re-execute it (we already sent it)
-      if (window === window.top && commandTarget !== 'virtual-keyboard') return;
+      // If we're receiving our own message for a mathfield command,
+      // don't re-execute it here (the local mathfield will handle it)
+      if (source === window && commandTarget !== 'virtual-keyboard') return;
 
       this.executeCommand(command!);
       return;

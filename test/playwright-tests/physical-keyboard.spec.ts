@@ -180,6 +180,26 @@ test('backslash to enter, enter to exit latex mode', async ({ page }) => {
   ).toBe('\\backslash lozenge');
 });
 
+test('focus moved away right after focusing a mathfield is kept', async ({
+  page,
+}) => {
+  await page.goto('/dist/playwright-test-page/');
+
+  // A mathfield focuses its keyboard sink after a short delay. If the focus
+  // moves to another element before that delay ends, the mathfield must not
+  // take the focus back.
+  await page.evaluate(() => {
+    (document.getElementById('mf-1') as MathfieldElement).focus();
+    document.getElementById('ta-2')!.focus();
+  });
+  await page.waitForTimeout(200);
+
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe('ta-2');
+  expect(
+    await page.locator('#mf-1').evaluate((e: MathfieldElement) => e.hasFocus())
+  ).toBe(false);
+});
+
 test('Select all/type to replace selection', async ({ page, browserName }) => {
   const modifierKey = /Mac|iPod|iPhone|iPad/.test(
     await page.evaluate(() => navigator.platform)
@@ -477,18 +497,19 @@ test('keyboard cut and paste', async ({ page, browserName }) => {
     'Keyboard paste does not work when headless on Linux (works when run with gui on Linux or headless/gui on MacOs)'
   );
 
-  const modifierKey = /Mac|iPod|iPhone|iPad/.test(
-    await page.evaluate(() => navigator.platform)
-  )
-    ? 'Meta'
-    : 'Control';
+  // Use process.platform (the real OS) rather than navigator.platform,
+  // which Playwright's bundled Chromium and Firefox both report as 'Win32'
+  // even on macOS.
+  const modifierKey = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-  let selectAllCommand = `${modifierKey}+a`;
-  if (modifierKey === 'Meta' && browserName === 'chromium') {
-    // Cmd-a not working with Chromium on Mac, need to use Control-A
-    // Cmd-a works correctly on Chrome and Edge on Mac
-    selectAllCommand = 'Control+a';
-  }
+  // On macOS, Cmd+A doesn't trigger select-all in Playwright's bundled
+  // Chromium. Use Ctrl+A instead; it works in Playwright on Mac and is the
+  // standard select-all on other platforms. Cmd+A works correctly in real
+  // Chrome/Edge on Mac and in Playwright's bundled Firefox.
+  const selectAllCommand =
+    modifierKey === 'Meta' && browserName === 'chromium'
+      ? 'Control+a'
+      : `${modifierKey}+a`;
 
   await page.goto('/dist/playwright-test-page/');
 
@@ -911,3 +932,58 @@ async function shiftTab(page) {
   // Wait some time for focus to change
   await page.waitForTimeout(500);
 }
+
+test('lower bound is navigated before upper bound (#2966)', async ({
+  page,
+}) => {
+  await page.goto('/dist/playwright-test-page/');
+
+  for (const [template, expected] of [
+    [String.raw`\int_{#?}^{#?}`, String.raw`\int_0^1`],
+    [String.raw`\sum_{#?}^{#?}`, String.raw`\sum_0^1`],
+  ]) {
+    await page.locator('#mf-1').evaluate((mfe: MathfieldElement, t) => {
+      mfe.value = '';
+      mfe.focus();
+      mfe.executeCommand(['insert', t]);
+    }, template);
+
+    // The lower bound placeholder is selected after the insertion
+    await page.locator('#mf-1').pressSequentially('0');
+    // Tab moves to the upper bound placeholder
+    await page.keyboard.press('Tab');
+    await page.locator('#mf-1').pressSequentially('1');
+
+    expect(
+      await page.locator('#mf-1').evaluate((e: MathfieldElement) => e.value)
+    ).toBe(expected);
+  }
+});
+
+test('arrow keys visit the subscript before the superscript (#2966)', async ({
+  page,
+}) => {
+  await page.goto('/dist/playwright-test-page/');
+
+  await page.locator('#mf-1').evaluate((mfe: MathfieldElement) => {
+    mfe.value = 'x_{a}^{b}';
+  });
+  await page.locator('#mf-1').focus();
+  await page.locator('#mf-1').evaluate((mfe: MathfieldElement) => {
+    mfe.position = 0;
+  });
+
+  // Move after `x`, then into the subscript, after `a`
+  await page.locator('#mf-1').press('ArrowRight');
+  await page.locator('#mf-1').press('ArrowRight');
+  await page.locator('#mf-1').press('ArrowRight');
+  await page.locator('#mf-1').pressSequentially('1');
+  // Move into the superscript, after `b`
+  await page.locator('#mf-1').press('ArrowRight');
+  await page.locator('#mf-1').press('ArrowRight');
+  await page.locator('#mf-1').pressSequentially('2');
+
+  expect(
+    await page.locator('#mf-1').evaluate((e: MathfieldElement) => e.value)
+  ).toBe(String.raw`x_{a1}^{b2}`);
+});

@@ -12,16 +12,11 @@ import { Atom } from '../core/atom-class';
 
 import '../latex-commands/definitions';
 
-import type {
-  ComputeEngine,
-  SemiBoxedExpression,
-} from '@cortex-js/compute-engine';
 import { toMathML } from '../formats/atom-to-math-ml';
 import { Box, coalesce, makeStruts } from '../core/box';
 import { Context } from '../core/context';
 import { parseLatex } from '../core/parser';
 import { atomToSpeakableText } from '../formats/atom-to-speakable-text';
-import { Expression } from './core-types';
 import { validateLatex as validateLatexInternal } from '../core/parser';
 
 import { atomToAsciiMath } from '../formats/atom-to-ascii-math';
@@ -151,10 +146,19 @@ export function convertLatexToMarkup(
 /**
  * Check if a string of LaTeX is valid and return an array of syntax errors.
  *
+ * @param options.macros Custom macro definitions to recognize during validation.
  * @category Conversion
  */
-export function validateLatex(s: string): LatexSyntaxError[] {
-  return validateLatexInternal(s, { context: getDefaultContext() });
+export function validateLatex(
+  s: string,
+  options?: Pick<LayoutOptions, 'macros'>
+): LatexSyntaxError[] {
+  const context = { ...getDefaultContext() };
+  if (options?.macros) {
+    const macros = normalizeMacroDictionary(options.macros);
+    context.getMacro = (token) => getMacroDefinition(token, macros);
+  }
+  return validateLatexInternal(s, { context });
 }
 
 /**
@@ -204,36 +208,6 @@ export function convertLatexToSpeakableText(latex: string): string {
   });
 
   return atomToSpeakableText(atoms);
-}
-
-let gComputeEngine: ComputeEngine;
-
-/**
- * Convert a MathJSON expression to a LaTeX string.
- *
- * ```js
- * convertMathJsonToLatex(["Add", 1, 2]);
- * // -> "1 + 2"
- * ```
- * @category Conversion
- */
-export function convertMathJsonToLatex(json: Expression): string {
-  if (!gComputeEngine) {
-    const ComputeEngineCtor =
-      globalThis[Symbol.for('io.cortexjs.compute-engine')]?.ComputeEngine;
-
-    if (ComputeEngineCtor) gComputeEngine = new ComputeEngineCtor();
-    else {
-      console.error(
-        `MathLive {{SDK_VERSION}}: The CortexJS Compute Engine library is not available.
-        
-        Load the library, for example with:
-        
-        import "https://esm.run/@cortex-js/compute-engine"`
-      );
-    }
-  }
-  return gComputeEngine?.box(json as SemiBoxedExpression).latex ?? '';
 }
 
 /** Convert a LaTeX string to a string of AsciiMath.
